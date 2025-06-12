@@ -1,0 +1,178 @@
+#===============================================================================
+# New Client Folder Generator - Nick's Hybrid Version
+#===============================================================================
+# Description: Creates organized folder structures for legal cases
+# Logic: Verified from nicksversion.sh
+# UI/Aesthetics: Borrowed from NewClient_v2.sh
+# Author: Nick Wade
+#===============================================================================
+
+# Configuration
+readonly BASE_DIR="$HOME/Documents/Projects/TestDirectory/Mwb-Work"
+
+# Color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+print_colored() { echo -e "${1}$2${NC}"; }
+error()   { print_colored "$RED"   "❌ Error: $1" >&2; }
+success() { print_colored "$GREEN" "✅ $1"; }
+info()    { print_colored "$BLUE"  "ℹ️  $1"; }
+warning() { print_colored "$YELLOW" "⚠️  $1"; }
+
+#===============================================================================
+# Utility Functions
+#===============================================================================
+
+trim() { echo "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+to_title_case() {
+    echo "$1" | awk '{ for (i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2)); print }'
+}
+
+#===============================================================================
+# Input Collection
+#===============================================================================
+
+read -p "Case Type [State/Federal/Postconviction/Civil]: " CASE_TYPE_RAW
+type_clean=$(to_title_case "$(trim "$CASE_TYPE_RAW")")
+CASE_TYPE="$type_clean"
+
+SUBTYPE=""
+if [[ "$CASE_TYPE" == "Postconviction" ]]; then
+    read -p "Type of Postconviction [Direct Appeal/Expunctions/Nondisclosures/Habeas/PDR]: " SUBTYPE_RAW
+    SUBTYPE="$(to_title_case "$(trim "$SUBTYPE_RAW")")"
+fi
+
+read -p "Client's Name: " FIRST_LAST_RAW
+FIRST_LAST_CLEAN="$(to_title_case "$(trim "$FIRST_LAST_RAW")")"
+IFS=' ' read -r FIRST_NAME REST <<< "$FIRST_LAST_CLEAN"
+LAST_NAME="$(trim "$REST")"
+
+if [[ -z "$FIRST_NAME" || -z "$LAST_NAME" ]]; then
+    error "Enter FIRST and LAST name."
+    exit 1
+fi
+
+LAST_FIRST="$LAST_NAME, $FIRST_NAME"
+LAST="$LAST_NAME"
+
+read -p "Court: " COURT_RAW
+COURT="$(to_title_case "$(trim "$COURT_RAW")")"
+
+read -p "Offense or Cause of Action: " OFFENSE_RAW
+OFFENSE="$(to_title_case "$(trim "$OFFENSE_RAW")")"
+
+read -p "Cause number: " CAUSE_NO
+CAUSE_NO="$(trim "$CAUSE_NO")"
+
+read -p "Date of the incident [MMDDYYYY]: " DATE
+while [[ ! "$DATE" =~ ^[0-9]{8}$ ]]; do
+    read -p "Enter a valid date [MMDDYYYY]: " DATE
+done
+
+valid_party=false
+while [ "$valid_party" = false ]; do
+    read -p "Opposing Party [State/Govt/Plaintiff/Defendant]: " PARTY_RAW
+    PARTY="$(to_title_case "$(trim "$PARTY_RAW")")"
+    case "$PARTY" in
+        State|Govt|Plaintiff|Defendant) valid_party=true ;;
+        *) warning "Must choose: State, Govt, Plaintiff, or Defendant." ;;
+    esac
+done
+
+if [[ "$CASE_TYPE" == "State" || "$CASE_TYPE" == "Civil" ]]; then
+    read -p "Enter county: " COUNTY
+    COUNTY_LOWER=$(echo "$COUNTY" | tr '[:upper:]' '[:lower:]')
+    if [[ "$COUNTY_LOWER" != "harris" ]]; then
+        COUNTY_CAP="$(to_title_case "$COUNTY")"
+        COURT="$COURT $COUNTY_CAP"
+    fi
+fi
+
+SUBTYPE_RAW_LOWER=$(echo "${SUBTYPE_RAW:-none}" | tr '[:upper:]' '[:lower:]')
+
+if [[ "$CASE_TYPE" == "Postconviction" && "$SUBTYPE_RAW_LOWER" != "none" ]]; then
+    BASE_PATH="$BASE_DIR/Postconviction/$SUBTYPE"
+    if [[ "$SUBTYPE" == "Direct Appeal" ]]; then
+        CASE_PATH="$BASE_PATH/${LAST_FIRST} Appeal ${COURT}/${OFFENSE} ${CAUSE_NO} ${DATE}"
+    else
+        CASE_PATH="$BASE_PATH/${LAST_FIRST} ${SUBTYPE} ${COURT}/${OFFENSE} ${CAUSE_NO} ${DATE}"
+    fi
+elif [[ "$CASE_TYPE" == "Federal" ]]; then
+    BASE_PATH="$BASE_DIR/Federal/${LAST_FIRST} ${COURT}"
+    CASE_PATH="$BASE_PATH/${OFFENSE} ${CAUSE_NO} ${DATE}"
+elif [[ "$CASE_TYPE" == "Civil" ]]; then
+    BASE_PATH="$BASE_DIR/Civil"
+    CASE_PATH="$BASE_PATH/${LAST_FIRST} ${OFFENSE} ${DATE}"
+else
+    BASE_PATH="$BASE_DIR/$CASE_TYPE"
+    CASE_PATH="$BASE_PATH/${LAST_FIRST} ${COURT}/${OFFENSE} ${CAUSE_NO} ${DATE}"
+fi
+
+#===============================================================================
+# Folder Structure Creation
+#===============================================================================
+
+mkdir -p "$CASE_PATH/${LAST_FIRST} Contract/Drafts"
+mkdir -p "$CASE_PATH/${LAST_FIRST} Pleadings & Filings/${LAST_FIRST} Briefs/Drafts"
+mkdir -p "$CASE_PATH/${LAST_FIRST} Pleadings & Filings/$PARTY Filings"
+mkdir -p "$CASE_PATH/${LAST_FIRST} Pleadings & Filings/${LAST} Motions/Drafts"
+mkdir -p "$CASE_PATH/${LAST_FIRST} Pleadings & Filings/${LAST} Notices/Drafts"
+mkdir -p "$CASE_PATH/${LAST_FIRST} Pleadings & Filings/${LAST} Orders"
+mkdir -p "$BASE_PATH/${LAST} Correspondence"
+mkdir -p "$CASE_PATH/${LAST} Research/Caselaw"
+mkdir -p "$CASE_PATH/${LAST} Research/Secondary Sources"
+mkdir -p "$CASE_PATH/${LAST} Research/Statutes"
+
+if [[ "$CASE_TYPE" == "Postconviction" ]]; then
+    mkdir -p "$CASE_PATH/${LAST_FIRST} Record on Appeal/${LAST} Clerks Record"
+    mkdir -p "$CASE_PATH/${LAST_FIRST} Record on Appeal/${LAST} Reporters Record"
+fi
+
+read -p "Add an 'Investigation' folder? [y/N]: " ADD_INVESTIGATION
+if [[ "$ADD_INVESTIGATION" =~ ^[Yy]$ ]]; then
+    mkdir -p "$CASE_PATH/${LAST_FIRST} Investigation"
+    success "Investigation folder added!"
+else
+    info "Skipped Investigation folder."
+fi
+
+read -p "Add a 'Client Documents' folder? [y/N]: " ADD_CLIENT_DOCS
+if [[ "$ADD_CLIENT_DOCS" =~ ^[Yy]$ ]]; then
+    mkdir -p "$CASE_PATH/${LAST_FIRST} Client Documents"
+    success "Client Documents folder added!"
+else
+    info "Skipped Client Documents folder."
+fi
+
+if [[ "$CASE_TYPE" != "Postconviction" ]]; then
+    read -p "Add a 'Discovery' folder? [y/N]: " ADD_DISCOVERY
+    if [[ "$ADD_DISCOVERY" =~ ^[Yy]$ ]]; then
+        DISC_PATH="$CASE_PATH/${LAST_FIRST} Discovery"
+        mkdir -p "$DISC_PATH"
+        success "Discovery folder added!"
+
+        read -p "Add standardized Discovery subfolders? [y/N]: " ADD_DISC_SUBS
+        if [[ "$ADD_DISC_SUBS" =~ ^[Yy]$ ]]; then
+            for folder in \
+                "Bodycam & Video" "Brady Material" "Crime Scene Photos" \
+                "Defense Investigation Records" "Discovery Logs & Indexes" \
+                "Documents Exchanged" "Forensic Reports" "Jail Phone Records" \
+                "Medical Records" "Police Reports" "Search Warrants" \
+                "Supplemental Disclosures" "Witness Statements"
+            do
+                mkdir -p "$DISC_PATH/$folder"
+            done
+            success "Discovery subfolders added!"
+        fi
+    else
+        info "Skipped Discovery folder."
+    fi
+fi
+
+success "SUCCESS: New Client folder saved!"
+echo "Base: $BASE_PATH"
+echo "Path: $CASE_PATH"
