@@ -1,0 +1,480 @@
+#!/bin/bash
+
+# Function to convert to Title Case
+to_title_case() {
+    echo "$1" | awk '{
+        for (i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2));
+        print
+    }'
+}
+
+# Function to trim whitespace from input
+trim() {
+    echo "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+# Function to sanitize path components (remove unsafe characters)
+sanitize_path_component() {
+    echo "$1" | tr -cd '[:alnum:] ._-'
+}
+
+edit_inputs() {
+    while true; do
+        echo ""
+        echo "╔══════════════════════════════════╗"
+        echo "║        Confirm/Edit Fields       ║"
+        echo "╚══════════════════════════════════╝"
+        echo "1) Client Name:      $FIRST_NAME $LAST_NAME"
+        echo "2) Case Type:        $CASE_TYPE"
+        [[ -n "$SUBTYPE" ]] && echo "3) Subtype:          $SUBTYPE"
+        [[ -n "$COURT" ]] && echo "4) Court:            $COURT"
+        [[ -n "$COUNTY" ]] && echo "5) County:           $COUNTY"
+        echo "6) Party:            $PARTY"
+        echo "7) Offense:          $OFFENSE"
+        echo "8) Cause Number:     $CAUSE_NO"
+        echo "9) Incident Date:    $DATE"
+        echo "10) Folder Path:     $CASE_PATH"
+        echo "11) Continue and Create Folders"
+        echo "0) Cancel Operation"
+        read -p "Enter number to edit, or 11 to continue: " EDIT_CHOICE
+
+        case "$EDIT_CHOICE" in
+            1)
+                read -p "First Name: " FIRST_RAW
+                FIRST_NAME=$(sanitize_path_component "$(to_title_case "$(trim "$FIRST_RAW")")")
+                read -p "Last Name: " LAST_RAW
+                LAST_NAME=$(sanitize_path_component "$(to_title_case "$(trim "$LAST_RAW")")")
+                LAST_FIRST="${LAST_NAME}_${FIRST_NAME}"
+                LAST="$LAST_NAME"
+                ;;
+            2)
+                echo "1) State"; echo "2) Federal"; echo "3) Civil"; echo "4) Postconviction"
+                read -p "Enter new case type number: " n
+                case "$n" in
+                    1) CASE_TYPE="State" ;;
+                    2) CASE_TYPE="Federal" ;;
+                    3) CASE_TYPE="Civil" ;;
+                    4) CASE_TYPE="Postconviction" ;;
+                    *) echo "Invalid";;
+                esac
+                ;;
+            3)
+                echo "1) PDR"; echo "2) Habeas"; echo "3) Direct Appeal"; echo "4) Expunction"; echo "5) Nondisclosure"
+                read -p "Enter new subtype number: " n
+                case "$n" in
+                    1) SUBTYPE="PDR" ;;
+                    2) SUBTYPE="Habeas" ;;
+                    3) SUBTYPE="Direct Appeal" ;;
+                    4) SUBTYPE="Expunction" ;;
+                    5) SUBTYPE="Nondisclosure" ;;
+                    *) echo "Invalid";;
+                esac
+                ;;
+            4)
+                read -p "New Court: " COURT_RAW
+                COURT_TRIMMED=$(trim "$COURT_RAW")
+                if [[ "$CASE_TYPE" == "Federal" ]]; then
+                    COURT=$(sanitize_path_component "$(echo "$COURT_TRIMMED" | tr '[:lower:]' '[:upper:]')")
+                else
+                    COURT=$(sanitize_path_component "$(to_title_case "$COURT_TRIMMED")")
+                fi
+                ;;
+            5)
+                read -p "New County: " COUNTY_RAW
+                COUNTY=$(sanitize_path_component "$(to_title_case "$(trim "$COUNTY_RAW")")")
+                ;;
+            6)
+                read -p "Party: " PARTY
+                ;;
+            7)
+                read -p "Offense: " OFFENSE_RAW
+                OFFENSE=$(sanitize_path_component "$(to_title_case "$(trim "$OFFENSE_RAW")")")
+                ;;
+            8)
+                read -p "Cause Number: " CAUSE_NO_RAW
+                CAUSE_NO=$(sanitize_path_component "$(trim "$CAUSE_NO_RAW")")
+                ;;
+            9)
+                read -p "Date of Incident [MMDDYYYY]: " DATE
+                # Improved MMDDYYYY format check:
+                if [[ ! "$DATE" =~ ^(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[0-9]{4}$ ]]; then
+                    echo "❌ Error: Date must be valid MMDDYYYY (e.g., 05312025)."
+                    continue
+                fi
+                ;;
+            10)
+                echo "Folder path is auto-generated. Rebuild by editing inputs above."
+                ;;
+            11)
+                break
+                ;;
+            0)
+                echo "❌ Operation cancelled."
+                exit 1
+                ;;
+            *)
+                echo "❌ Error: Invalid choice"
+                ;;
+        esac
+
+        # Recalculate folder path after any edits
+        SUBTYPE_RAW_LOWER=$(echo "${SUBTYPE:-none}" | tr '[:upper:]' '[:lower:]')
+        if [[ "$CASE_TYPE" == "Postconviction" && "$SUBTYPE_RAW_LOWER" != "none" ]]; then
+            BASE_PATH="$HOME/Documents/Projects/TestDirectory/Mwb-Work/Postconviction/$SUBTYPE"
+            if [[ "$SUBTYPE" == "Direct Appeal" ]]; then
+                CASE_PATH="$BASE_PATH/${LAST_FIRST} Appeal ${COURT}/${OFFENSE} ${CAUSE_NO} ${DATE}"
+            else
+                CASE_PATH="$BASE_PATH/${LAST_FIRST} ${SUBTYPE} ${COURT}/${OFFENSE} ${CAUSE_NO} ${DATE}"
+            fi
+        elif [[ "$CASE_TYPE" == "Federal" ]]; then
+            BASE_PATH="$HOME/Documents/Projects/TestDirectory/Mwb-Work/Federal/${LAST_FIRST} ${COURT}"
+            CASE_PATH="$BASE_PATH/${OFFENSE} ${CAUSE_NO} ${DATE}"
+        elif [[ "$CASE_TYPE" == "Civil" ]]; then
+            BASE_PATH="$HOME/Documents/Projects/TestDirectory/Mwb-Work/Civil"
+            CASE_PATH="$BASE_PATH/${LAST_FIRST} ${OFFENSE} ${DATE}"
+        else
+            BASE_PATH="$HOME/Documents/Projects/TestDirectory/Mwb-Work/$CASE_TYPE"
+            CASE_PATH="$BASE_PATH/${LAST_FIRST} ${COURT}/${OFFENSE} ${CAUSE_NO} ${DATE}"
+        fi
+    done
+}
+
+echo ""
+echo "╔══════════════════════════════════╗"
+echo "║            Case Type             ║"
+echo "╚══════════════════════════════════╝"
+echo "1) State"
+echo "2) Federal"
+echo "3) Civil"
+echo "4) Postconviction"
+
+read -p "ℹ️  Enter corresponding number for case type: " CASE_TYPE_NUM
+case "$CASE_TYPE_NUM" in
+    1) CASE_TYPE="State" ;;
+    2) CASE_TYPE="Federal" ;;
+    3) CASE_TYPE="Civil" ;;
+    4) CASE_TYPE="Postconviction" ;;
+    *) echo "❌ INVALID SELECTION" && exit 1 ;;
+esac
+
+# Select Subtype if Postconviction
+SUBTYPE=""
+if [[ "$CASE_TYPE" == "Postconviction" ]]; then
+    echo "╔══════════════════════════════════╗"
+    echo "║       Postconviction Type        ║"
+    echo "╚══════════════════════════════════╝"
+    echo ""
+    echo "1) PDR"
+    echo "2) Habeas"
+    echo "3) Direct Appeal"
+    echo "4) Expunction"
+    echo "5) Nondisclosure"
+    read -p "ℹ️  Enter number: " SUBTYPE_NUM
+    case "$SUBTYPE_NUM" in
+        1) SUBTYPE="PDR" ;;
+        2) SUBTYPE="Habeas" ;;
+        3) SUBTYPE="Direct Appeal" ;;
+        4) SUBTYPE="Expunction" ;;
+        5) SUBTYPE="Nondisclosure" ;;
+        *) echo "❌ INVALID SELECTION" && exit 1 ;;
+    esac
+fi
+
+echo ""
+echo "╔══════════════════════════════════╗"
+echo "║            Client Name           ║"
+echo "╚══════════════════════════════════╝"
+
+while true; do
+    read -p "Client's First Name: " FIRST_RAW
+    FIRST_NAME=$(sanitize_path_component "$(to_title_case "$(trim "$FIRST_RAW")")")
+    if [[ -z "$FIRST_NAME" ]]; then
+        echo "❌ First name cannot be empty."
+    else
+        break
+    fi
+done
+
+while true; do
+    read -p "Client's Last Name: " LAST_RAW
+    LAST_NAME=$(sanitize_path_component "$(to_title_case "$(trim "$LAST_RAW")")")
+    if [[ -z "$LAST_NAME" ]]; then
+        echo "❌ Last name cannot be empty."
+    else
+        break
+    fi
+done
+
+LAST_FIRST="${LAST_NAME}_${FIRST_NAME}"
+LAST="$LAST_NAME"
+
+echo "╔══════════════════════════════════╗"
+echo "║        Court Information         ║"
+echo "╚══════════════════════════════════╝"
+
+if [[ "${SUBTYPE^^}" != "PDR" ]]; then
+    while true; do
+        read -p "Court: " COURT_RAW
+        COURT_TRIMMED=$(trim "$COURT_RAW")
+        if [[ -n "$COURT_TRIMMED" ]]; then
+            if [[ "$CASE_TYPE" == "Federal" ]]; then
+                COURT=$(sanitize_path_component "$(echo "$COURT_TRIMMED" | tr '[:lower:]' '[:upper:]')")
+            else
+                COURT=$(sanitize_path_component "$(to_title_case "$COURT_TRIMMED")")
+            fi
+            break
+        else
+            echo "❌ Court name cannot be empty. Please enter a valid court name."
+        fi
+    done
+else
+    COURT=""
+fi
+
+echo "╔══════════════════════════════════╗"
+echo "║          Case Details            ║"
+echo "╚══════════════════════════════════╝"
+
+while true; do
+    read -p "Offense/Cause of Action: " OFFENSE_RAW
+    OFFENSE=$(sanitize_path_component "$(to_title_case "$(trim "$OFFENSE_RAW")")")
+    if [[ -z "$OFFENSE" ]]; then
+        echo "❌ Error: Offense/Cause of Action cannot be empty."
+    else
+        break
+    fi
+done
+
+while true; do
+    read -p "Cause number: " CAUSE_NO_RAW
+    CAUSE_NO=$(sanitize_path_component "$(trim "$CAUSE_NO_RAW")")
+    if [[ -z "$CAUSE_NO" ]]; then
+        echo "❌ Error: Cause number cannot be empty."
+    else
+        break
+    fi
+done
+
+while true; do
+    read -p "Date of the incident [MMDDYYYY]: " DATE
+    # Improved MMDDYYYY format check:
+    if [[ ! "$DATE" =~ ^(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[0-9]{4}$ ]]; then
+        echo "❌ Error: Date must be valid MMDDYYYY (e.g., 05312025)."
+    else
+        break
+    fi
+done
+
+# Assign PARTY automatically
+if [[ "$CASE_TYPE" == "Civil" ]]; then
+    PARTY="Defendant"
+elif [[ "$CASE_TYPE" == "Postconviction" ]]; then
+    read -p "Is this case Ex parte? [y/N]: " IS_EX_PARTE
+    if [[ "${IS_EX_PARTE,,}" == "y" ]]; then
+        PARTY="Ex parte"
+    else
+        PARTY="State"
+    fi
+else
+    PARTY="State"
+fi
+
+# If State or Civil, prompt for county and modify COURT
+if [[ "$CASE_TYPE" == "State" || "$CASE_TYPE" == "Civil" ]]; then
+    while true; do
+        read -p "Enter county: " COUNTY_RAW
+        COUNTY=$(sanitize_path_component "$(to_title_case "$(trim "$COUNTY_RAW")")")
+        COUNTY_LOWER=$(echo "$COUNTY" | tr '[:upper:]' '[:lower:]')
+        if [[ -z "$COUNTY" ]]; then
+            echo "❌ Error: County cannot be empty."
+        else
+            break
+        fi
+    done
+    if [[ "$COUNTY_LOWER" != "harris" ]]; then
+        COURT="$(echo "$COURT $COUNTY" | sed 's/^ *//')"
+    fi
+fi
+
+# Normalize subtype for logic
+SUBTYPE_RAW_LOWER=$(echo "${SUBTYPE:-none}" | tr '[:upper:]' '[:lower:]')
+
+echo "╔══════════════════════════════════╗"
+echo "║        Folder Path Preview       ║"
+echo "╚══════════════════════════════════╝"
+
+# Build paths
+if [[ "$CASE_TYPE" == "Postconviction" && "$SUBTYPE_RAW_LOWER" != "none" ]]; then
+    BASE_PATH="$HOME/Documents/Projects/TestDirectory/Mwb-Work/Postconviction/$SUBTYPE"
+    if [[ "$SUBTYPE" == "Direct Appeal" ]]; then
+        CASE_PATH="$BASE_PATH/${LAST_FIRST} Appeal ${COURT}/${OFFENSE} ${CAUSE_NO} ${DATE}"
+    else
+        CASE_PATH="$BASE_PATH/${LAST_FIRST} ${SUBTYPE} ${COURT}/${OFFENSE} ${CAUSE_NO} ${DATE}"
+    fi
+elif [[ "$CASE_TYPE" == "Federal" ]]; then
+    BASE_PATH="$HOME/Documents/Projects/TestDirectory/Mwb-Work/Federal/${LAST_FIRST} ${COURT}"
+    CASE_PATH="$BASE_PATH/${OFFENSE} ${CAUSE_NO} ${DATE}"
+elif [[ "$CASE_TYPE" == "Civil" ]]; then
+    BASE_PATH="$HOME/Documents/Projects/TestDirectory/Mwb-Work/Civil"
+    CASE_PATH="$BASE_PATH/${LAST_FIRST} ${OFFENSE} ${DATE}"
+else
+    BASE_PATH="$HOME/Documents/Projects/TestDirectory/Mwb-Work/$CASE_TYPE"
+    CASE_PATH="$BASE_PATH/${LAST_FIRST} ${COURT}/${OFFENSE} ${CAUSE_NO} ${DATE}"
+fi
+
+echo "📁 $CASE_PATH"
+
+generate_structure() {
+    # Create folder structure
+    mkdir -p "$CASE_PATH/${LAST_FIRST} Contract/Drafts"
+    mkdir -p "$CASE_PATH/${LAST_FIRST} Pleadings & Filings/${LAST_FIRST} Briefs/Drafts"
+    mkdir -p "$CASE_PATH/${LAST_FIRST} Pleadings & Filings/$PARTY Filings"
+    mkdir -p "$CASE_PATH/${LAST_FIRST} Pleadings & Filings/${LAST} Motions/Drafts"
+    mkdir -p "$CASE_PATH/${LAST_FIRST} Pleadings & Filings/${LAST} Notices/Drafts"
+    mkdir -p "$CASE_PATH/${LAST_FIRST} Pleadings & Filings/${LAST} Orders"
+    mkdir -p "$BASE_PATH/${LAST} Correspondence"
+    mkdir -p "$CASE_PATH/${LAST} Research/Caselaw"
+    mkdir -p "$CASE_PATH/${LAST} Research/Secondary Sources"
+    mkdir -p "$CASE_PATH/${LAST} Research/Statutes"
+
+    # Optional Record on Appeal (except PDR)
+    if [[ "${CASE_TYPE}" == "Postconviction" && "${SUBTYPE^^}" != "PDR" ]]; then
+        mkdir -p "$CASE_PATH/${LAST_FIRST} Record on Appeal/${LAST} Clerks Record"
+        mkdir -p "$CASE_PATH/${LAST_FIRST} Record on Appeal/${LAST} Reporters Record"
+    fi
+
+    echo ""
+    echo "╔══════════════════════════════════╗"
+    echo "║         Optional Folders        ║"
+    echo "╚══════════════════════════════════╝"
+
+    # Optional folders
+    read -p "Add 'Investigation' folder? [y/N]: " ADD_INVESTIGATION
+    if [[ "${ADD_INVESTIGATION,,}" == "y" ]]; then
+        mkdir -p "$CASE_PATH/${LAST_FIRST} Investigation"
+        echo "✅ Investigation folder added!"
+    else
+        echo "ℹ️ Investigation folder skipped."
+    fi
+
+    read -p "Add 'Client Documents' folder? [y/N]: " ADD_CLIENT_DOCS
+    if [[ "${ADD_CLIENT_DOCS,,}" == "y" ]]; then
+        CLIENT_DOCS_PATH="$CASE_PATH/${LAST_FIRST} Client Documents"
+        mkdir -p "$CLIENT_DOCS_PATH"
+        echo "✅ Client Documents folder added!"
+
+        echo "Select Client Document subfolders to add (select one at a time, or 'Done' to finish):"
+        PS3="➡️  Choose a number or type Enter for 'Done': "
+        OPTIONS=(
+            "$LAST Civil Litigation"
+            "$LAST Criminal History"
+            "$LAST Education Records"
+            "$LAST Emails"
+            "$LAST Employment Records"
+            "$LAST Letters of Support"
+            "$LAST Mental Health Records"
+            "$LAST Notes"
+            "$LAST Photos"
+            "$LAST Prior Court Records"
+            "$LAST Rehab Records"
+            "$LAST Screenshots"
+            "$LAST Timeline of Events"
+            "$LAST Warrants"
+            "Done"
+        )
+
+        select opt in "${OPTIONS[@]}"; do
+            [[ $opt == "Done" ]] && break
+            mkdir -p "$CLIENT_DOCS_PATH/$opt" && echo "✅ $opt added!"
+
+            # Nested folders — triggered only if main parent is selected
+            if [[ "$opt" == "$LAST Criminal History" ]]; then
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Convictions/Felony"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Convictions/Misdemeanor"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Deferred Adjudication"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Probation"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/Jail Records"
+            elif [[ "$opt" == "$LAST Employment Records" ]]; then
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/Pay Stubs"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/Schedules or Time Cards"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/Tax forms"
+            elif [[ "$opt" == "$LAST Mental Health Records" ]]; then
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/Psych Evaluations"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/Verification of Mental Health Disorder"
+            elif [[ "$opt" == "$LAST Prior Court Records" ]]; then
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Court Correspondence"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Discovery"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Exhibits/Defense"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Exhibits/Govt"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Indictment"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Jury/$LAST Jury Charge"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Limine 404"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Mitigation"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Motions/Defense"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Motions/Govt"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Other Govt Filings"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Sentencing"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Subpoenas/Defense"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/$LAST Subpoenas/Govt"
+            elif [[ "$opt" == "$LAST Rehab Records" ]]; then
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/Attendance Logs"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/Proof of Completion"
+                mkdir -p "$CLIENT_DOCS_PATH/$opt/Staff Recommendations"
+            fi
+        done
+        unset PS3
+    else
+        echo "ℹ️ Client Documents folder skipped."
+    fi
+
+    if [[ "$CASE_TYPE" != "Postconviction" ]]; then
+        read -p "Add 'Discovery' folder? [y/N]: " ADD_DISCOVERY
+        if [[ "${ADD_DISCOVERY,,}" == "y" ]]; then
+            DISC_PATH="$CASE_PATH/${LAST_FIRST} Discovery"
+            mkdir -p "$DISC_PATH"
+            echo "✅ Discovery folder added!"
+
+            echo "Select Discovery subfolders to add (select one at a time, or 'Done' to finish):"
+            PS3="➡️  Choose a number or type Enter for 'Done': "
+            OPTIONS=(
+                "Bodycam & Video"
+                "Brady Material"
+                "Crime Scene Photos"
+                "Defense Investigation Records"
+                "Discovery Logs & Indexes"
+                "Documents Exchanged"
+                "Forensic Reports"
+                "Jail Phone Records"
+                "Medical Records"
+                "Police Reports"
+                "Search Warrants"
+                "Supplemental Disclosures"
+                "Witness Statements"
+                "Done"
+            )
+
+            select opt in "${OPTIONS[@]}"; do
+                [[ $opt == "Done" ]] && break
+                [[ -n "$opt" ]] && mkdir -p "$DISC_PATH/$opt" && echo "✅ $opt added!"
+            done
+            unset PS3
+        else
+            echo "ℹ️ Discovery folder skipped."
+        fi
+    fi
+}
+
+echo ""
+echo "╔══════════════════════════════════╗"
+echo "║          Setup Complete          ║"
+echo "╚══════════════════════════════════╝"
+read -p "Proceed with creation? [Y/n]: " CONFIRM
+if [[ "${CONFIRM,,}" == "y" ]]; then
+    generate_structure
+    echo ""
+    echo "✅ SUCCESS: A new client folder has been created for $LAST_FIRST"
+    echo ""
+    echo "📁 Saved to: $CASE_PATH"
+else
+    echo "❌ Operation cancelled. No folders were created."
+fi
